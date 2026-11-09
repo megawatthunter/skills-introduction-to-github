@@ -1,0 +1,961 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hollow Blocks">
+<meta name="theme-color" content="#07080c">
+<title>Hollow Blocks</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik+Glitch&family=Rubik:wght@400;600&display=swap">
+<style>
+/* Layout: one full-screen WebGL canvas, HUD layered on top, full-screen overlays for menu and endings.
+   Single committed dark look: this is a night-survival game, so it stays dark on every host theme. */
+:root{
+  --bg:#07080c;            /* page ground, matches night sky */
+  --fg:#ece6d8;            /* bone white text */
+  --muted:#9b958a;         /* secondary text */
+  --blood:#c9302a;         /* accent: zombie-eye red */
+  --moss:#5c7a4a;          /* grass green, used sparingly */
+  --panel:rgba(9,10,15,.86);
+  --line:rgba(236,230,216,.16);
+  --font-display:'Rubik Glitch','Impact','Arial Black',system-ui,sans-serif;
+  --font-body:'Rubik',system-ui,-apple-system,'Segoe UI',sans-serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important;}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--fg);font-family:var(--font-body);}
+body{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;overscroll-behavior:none;}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block;background:var(--bg);}
+.ui{pointer-events:auto;}
+#hud{position:fixed;inset:0;pointer-events:none;font-variant-numeric:tabular-nums;}
+#hud > *{position:absolute;}
+#hearts{top:calc(10px + env(safe-area-inset-top,0px));left:max(14px,env(safe-area-inset-left,0px));font-size:22px;letter-spacing:1px;color:var(--blood);text-shadow:0 0 6px rgba(0,0,0,.9);}
+#hearts .off{color:rgba(236,230,216,.28);}
+#clock{top:calc(10px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);font-size:14px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--fg);text-shadow:0 1px 4px #000;white-space:nowrap;}
+#clock.night{color:#e9b7b4;}
+#kills{top:calc(10px + env(safe-area-inset-top,0px));right:max(14px,env(safe-area-inset-right,0px));font-size:14px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;text-shadow:0 1px 4px #000;}
+#cross{left:50%;top:50%;width:18px;height:18px;transform:translate(-50%,-50%);opacity:.85;}
+#cross:before,#cross:after{content:"";position:absolute;background:#fff;mix-blend-mode:difference;}
+#cross:before{left:8px;top:0;width:2px;height:18px;}
+#cross:after{top:8px;left:0;width:18px;height:2px;}
+#msg{left:50%;bottom:calc(120px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);font-family:var(--font-display);font-size:clamp(18px,4.5vw,30px);color:var(--fg);text-shadow:0 0 14px rgba(201,48,42,.7),0 2px 4px #000;opacity:0;transition:opacity .6s;white-space:nowrap;text-align:center;}
+#msg.show{opacity:1;}
+#hotbar{left:50%;bottom:calc(12px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);display:flex;gap:6px;pointer-events:auto;}
+.slot{width:46px;height:46px;border:2px solid var(--line);background:var(--panel);border-radius:4px;display:grid;place-items:center;}
+.slot canvas{width:34px;height:34px;image-rendering:pixelated;}
+.slot.sel{border-color:var(--fg);box-shadow:0 0 0 2px rgba(0,0,0,.6);}
+#joy{left:0;top:0;width:120px;height:120px;border-radius:50%;border:2px solid rgba(236,230,216,.35);background:rgba(236,230,216,.06);transform:translate(-50%,-50%);display:none;}
+#knob{left:0;top:0;width:52px;height:52px;border-radius:50%;background:rgba(236,230,216,.55);transform:translate(-50%,-50%);display:none;}
+.btn{right:max(18px,env(safe-area-inset-right,0px));width:68px;height:68px;border-radius:50%;border:2px solid var(--line);background:var(--panel);color:var(--fg);font:600 12px/1 var(--font-body);letter-spacing:.1em;text-transform:uppercase;display:grid;place-items:center;pointer-events:auto;}
+.btn:active{background:rgba(236,230,216,.22);}
+#btnJump{bottom:calc(26px + env(safe-area-inset-bottom,0px));}
+#btnPlace{bottom:calc(110px + env(safe-area-inset-bottom,0px));}
+#dmg{inset:0;background:radial-gradient(ellipse at center,rgba(201,48,42,0) 40%,rgba(201,48,42,.85) 100%);opacity:0;}
+#vig{inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 45%,rgba(0,0,0,.9) 100%);opacity:.4;}
+.overlay{position:fixed;inset:0;display:grid;place-items:center;background:rgba(7,8,12,.78);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);z-index:5;overflow:auto;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-bottom,0px));}
+.card{max-width:520px;width:100%;}
+h1{font-family:var(--font-display);font-weight:400;font-size:clamp(40px,11vw,72px);line-height:.95;margin:0 0 10px;color:var(--fg);text-wrap:balance;text-shadow:0 0 22px rgba(201,48,42,.55);}
+h1 em{font-style:normal;color:var(--blood);}
+h2{font-family:var(--font-display);font-weight:400;font-size:clamp(34px,9vw,60px);margin:0 0 10px;text-wrap:balance;}
+.lede{font-size:16px;line-height:1.45;color:var(--fg);margin:0 0 14px;max-width:46ch;}
+.rules{margin:0 0 16px;padding:0;list-style:none;display:grid;gap:6px;font-size:14px;line-height:1.4;color:var(--muted);}
+.rules b{color:var(--fg);font-weight:600;}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:16px;}
+.chip{border:1px solid var(--line);background:transparent;color:var(--muted);font:600 12px/1 var(--font-body);letter-spacing:.1em;text-transform:uppercase;padding:9px 12px;border-radius:999px;}
+.chip.on{color:var(--fg);border-color:var(--fg);}
+.play{display:block;width:100%;padding:18px;border:0;border-radius:6px;background:var(--blood);color:#fff;font:600 18px/1 var(--font-body);letter-spacing:.08em;text-transform:uppercase;cursor:pointer;}
+.play:focus-visible,.chip:focus-visible,.btn:focus-visible{outline:2px solid var(--fg);outline-offset:2px;}
+.fine{font-size:12px;color:var(--muted);margin:12px 0 0;line-height:1.5;}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 18px;}
+.stat{border:1px solid var(--line);padding:10px;border-radius:4px;}
+.stat span{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);}
+.stat strong{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;}
+#fatal{color:var(--fg);}
+@media (prefers-reduced-motion:reduce){#msg{transition:none;}}
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="hud" hidden>
+  <div id="vig"></div>
+  <div id="dmg"></div>
+  <div id="hearts"></div>
+  <div id="clock">Day</div>
+  <div id="kills">0 slain</div>
+  <div id="cross"></div>
+  <div id="msg"></div>
+  <div id="joy"></div><div id="knob"></div>
+  <div id="hotbar" class="ui"></div>
+  <button class="btn ui" id="btnPlace" type="button" aria-label="Place block">Place</button>
+  <button class="btn ui" id="btnJump" type="button" aria-label="Jump">Jump</button>
+</div>
+
+<div id="start" class="overlay">
+  <div class="card">
+    <h1>Hollow <em>Blocks</em></h1>
+    <p class="lede">Three nights in a block world that doesn't want you in it. Dig, build, and keep your eyes on them.</p>
+    <ul class="rules">
+      <li><b>Touch:</b> left side drags to walk, right side drags to look. Tap to hit a zombie or break a block. Hold to place one.</li>
+      <li><b>Keyboard:</b> WASD, mouse look, click to break or attack, right-click to place, Space to jump, 1–4 to pick a block.</li>
+      <li><b>They move faster when you aren't looking at them.</b> Wall yourself in before dusk.</li>
+    </ul>
+    <div class="row" role="group" aria-label="Render resolution">
+      <button class="chip on ui" id="qUltra" type="button">Native retina</button>
+      <button class="chip ui" id="qBal" type="button">Balanced</button>
+    </div>
+    <button class="play ui" id="play" type="button">Tap to play · sound on</button>
+    <p class="fine">On iPhone: rotate to landscape, and use Share → Add to Home Screen for a full-screen build without the address bar.</p>
+    <p id="fatal" class="fine" hidden></p>
+  </div>
+</div>
+
+<div id="end" class="overlay" hidden>
+  <div class="card">
+    <h2 id="endTitle">You died.</h2>
+    <p class="lede" id="endText"></p>
+    <div class="stats">
+      <div class="stat"><span>Nights</span><strong id="sNights">0</strong></div>
+      <div class="stat"><span>Slain</span><strong id="sKills">0</strong></div>
+      <div class="stat"><span>Alive</span><strong id="sTime">0:00</strong></div>
+    </div>
+    <button class="play ui" id="again" type="button">Play again</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+'use strict';
+
+// ------------------------------------------------------------------ helpers
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+function lerpAngle(a, b, t) { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return a + d * t; }
+function mulberry32(a) { return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+// 2D value noise in [0,1]
+function makeNoise(seed) {
+  const r = mulberry32(seed); const P = new Uint8Array(512);
+  for (let i = 0; i < 256; i++) P[i] = i;
+  for (let i = 255; i > 0; i--) { const j = (r() * (i + 1)) | 0; const t = P[i]; P[i] = P[j]; P[j] = t; }
+  for (let i = 0; i < 256; i++) P[256 + i] = P[i];
+  const hash = (x, y) => P[(P[x & 255] + (y & 255)) & 511] / 255;
+  const sm = (t) => t * t * (3 - 2 * t);
+  return function (x, y) {
+    const xi = Math.floor(x), yi = Math.floor(y); const xf = x - xi, yf = y - yi;
+    const a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+    const u = sm(xf), v = sm(yf);
+    return lerp(lerp(a, b, u), lerp(c, d, u), v);
+  };
+}
+
+if (!window.THREE) {
+  const f = $('fatal'); f.hidden = false;
+  f.textContent = 'The 3D engine could not be loaded. Check your connection and reload the page.';
+  $('play').disabled = true;
+  return;
+}
+
+// ------------------------------------------------------------------ world data
+const W = 64, H = 40, D = 64, CH = 16, CX = W / CH, CZ = D / CH;
+const AIR = 0, GRASS = 1, DIRT = 2, STONE = 3, LOG = 4, LEAVES = 5, PLANKS = 6, SAND = 7, COBBLE = 8;
+// atlas tile per block: [top, bottom, side]
+const TILES = { 1: [0, 2, 1], 2: [2, 2, 2], 3: [3, 3, 3], 4: [5, 5, 4], 5: [6, 6, 6], 6: [7, 7, 7], 7: [8, 8, 8], 8: [9, 9, 9] };
+const HOTBAR = [DIRT, STONE, PLANKS, LOG];
+const blocks = new Uint8Array(W * H * D);
+const idx = (x, y, z) => x + W * (z + D * y);
+function getB(x, y, z) { if (x < 0 || x >= W || z < 0 || z >= D || y < 0 || y >= H) return AIR; return blocks[idx(x, y, z)]; }
+// Collision view of the world: the outside is a solid invisible wall, below y=0 is solid, above the top is air.
+function isSolid(x, y, z) { if (y >= H) return false; if (y < 0 || x < 0 || x >= W || z < 0 || z >= D) return true; return blocks[idx(x, y, z)] !== AIR; }
+function groundY(x, z) {
+  const xi = clamp(Math.floor(x), 0, W - 1), zi = clamp(Math.floor(z), 0, D - 1);
+  for (let y = H - 1; y >= 0; y--) if (blocks[idx(xi, y, zi)] !== AIR) return y + 1;
+  return 1;
+}
+
+function generateWorld(seed) {
+  blocks.fill(AIR);
+  const n1 = makeNoise(seed), n2 = makeNoise(seed + 99), rnd = mulberry32(seed + 7);
+  const heights = new Uint8Array(W * D);
+  for (let x = 0; x < W; x++) for (let z = 0; z < D; z++) {
+    let h = n1(x / 22, z / 22) * 9 + n2(x / 7, z / 7) * 3 + n2(x / 3 + 50, z / 3);
+    h = clamp(Math.floor(5 + h), 3, H - 12);
+    heights[x + W * z] = h;
+    for (let y = 0; y <= h; y++) {
+      let b = STONE;
+      if (y === h) b = h <= 7 ? SAND : GRASS;
+      else if (y > h - 3) b = h <= 7 ? SAND : DIRT;
+      if (y === 0) b = STONE;
+      blocks[idx(x, y, z)] = b;
+    }
+  }
+  // trees
+  for (let i = 0; i < 140; i++) {
+    const x = 3 + ((rnd() * (W - 6)) | 0), z = 3 + ((rnd() * (D - 6)) | 0);
+    const h = heights[x + W * z];
+    if (h <= 7 || rnd() < 0.45) continue;
+    if (Math.abs(x - W / 2) < 4 && Math.abs(z - D / 2) < 4) continue; // keep spawn clear
+    const th = 4 + ((rnd() * 2) | 0);
+    for (let y = 1; y <= th; y++) blocks[idx(x, h + y, z)] = LOG;
+    for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) for (let dy = -2; dy <= 1; dy++) {
+      const yy = h + th + dy; if (yy >= H) continue;
+      const dist = Math.abs(dx) + Math.abs(dz) + Math.abs(dy);
+      if (dist > 4) continue;
+      if (dy === 1 && (Math.abs(dx) > 1 || Math.abs(dz) > 1)) continue;
+      if (Math.abs(dx) === 2 && Math.abs(dz) === 2 && rnd() < 0.6) continue;
+      const k = idx(x + dx, yy, z + dz);
+      if (blocks[k] === AIR) blocks[k] = LEAVES;
+    }
+  }
+}
+
+// ------------------------------------------------------------------ textures (procedural, 64px tiles)
+const vn = makeNoise(42), vn2 = makeNoise(77);
+let texRnd = mulberry32(1234);
+const grain = (a) => (texRnd() - 0.5) * a;
+const blotch = (x, y, s, off) => vn((x + off) / s, (y + off) / s) - 0.5;
+function paintTile(g, i, T, fn) {
+  const img = g.createImageData(T, T), d = img.data;
+  for (let y = 0; y < T; y++) for (let x = 0; x < T; x++) {
+    const c = fn(x, y); const k = (y * T + x) * 4;
+    d[k] = clamp(c[0], 0, 255); d[k + 1] = clamp(c[1], 0, 255); d[k + 2] = clamp(c[2], 0, 255); d[k + 3] = 255;
+  }
+  g.putImageData(img, i * T, 0);
+}
+function makeAtlas() {
+  const T = 64, N = 16;
+  const cv = document.createElement('canvas'); cv.width = T * N; cv.height = T;
+  const g = cv.getContext('2d');
+  texRnd = mulberry32(1234);
+  const grassTop = (x, y) => { const b = blotch(x, y, 9, 0) * 60 + grain(26); const blade = vn2(x / 2, y / 2) > 0.78 ? 25 : 0; return [78 + b * 0.6 + blade * 0.5, 134 + b + blade, 52 + b * 0.5]; };
+  const dirt = (x, y) => { const b = blotch(x, y, 7, 10) * 50 + grain(28); const peb = vn2(x / 3 + 9, y / 3) > 0.82 ? -35 : 0; return [118 + b + peb, 84 + b * 0.8 + peb, 56 + b * 0.6 + peb]; };
+  paintTile(g, 0, T, grassTop);
+  paintTile(g, 1, T, (x, y) => { const edge = 9 + Math.floor(vn2(x / 4 + 3, 0.5) * 7); return y < edge ? grassTop(x, y) : dirt(x, y); });
+  paintTile(g, 2, T, dirt);
+  paintTile(g, 3, T, (x, y) => { const b = blotch(x, y, 10, 20) * 55 + grain(22); const crack = Math.abs(vn(x / 6 + 30, y / 6) - 0.5) < 0.014 ? -45 : 0; return [124 + b + crack, 124 + b + crack, 128 + b + crack]; });
+  paintTile(g, 4, T, (x, y) => { const s = Math.sin(x * 0.9 + vn2(x / 5, y / 10) * 4) * 14; const b = grain(24) + blotch(x, y, 6, 40) * 30; return [96 + s + b, 66 + s * 0.8 + b * 0.8, 40 + s * 0.5 + b * 0.5]; });
+  paintTile(g, 5, T, (x, y) => { const dx = x - 32, dy = y - 32; const r = Math.sqrt(dx * dx + dy * dy) + vn(x / 8, y / 8) * 3; const ring = Math.sin(r * 1.3) > 0.2 ? 0 : -30; const bark = r > 29 ? -40 : 0; const b = grain(14); return [172 + ring + bark + b, 132 + ring * 0.9 + bark + b, 82 + ring * 0.6 + bark + b]; });
+  paintTile(g, 6, T, (x, y) => { const b = blotch(x, y, 5, 50) * 70 + grain(30); const hole = vn2(x / 2 + 70, y / 2) > 0.86 ? -45 : 0; const hi = vn2(x / 2 + 90, y / 2) > 0.9 ? 30 : 0; return [38 + b * 0.5 + hole + hi, 92 + b + hole + hi * 1.5, 30 + b * 0.4 + hole + hi * 0.6]; });
+  paintTile(g, 7, T, (x, y) => { const row = Math.floor(y / 16); const seam = (y % 16 === 0 || y % 16 === 15) ? -50 : 0; const vseam = ((x + row * 23) % 64) < 2 ? -40 : 0; const gr = Math.sin((y + row * 7) * 0.7 + x * 0.08) * 8 + grain(16); return [170 + gr + seam + vseam, 128 + gr * 0.9 + seam + vseam, 78 + gr * 0.6 + seam + vseam]; });
+  paintTile(g, 8, T, (x, y) => { const b = blotch(x, y, 8, 60) * 20 + grain(26); return [216 + b, 202 + b, 152 + b]; });
+  paintTile(g, 9, T, (x, y) => { const n = vn(x / 6 + 80, y / 6 + 80), n2 = vn(x / 6 + 80.6, y / 6 + 80.6); const edge = Math.abs(n - n2) > 0.05 ? -55 : 0; const b = (n - 0.5) * 60 + grain(22); return [118 + b + edge, 118 + b + edge, 116 + b + edge]; });
+  return cv;
+}
+function canvasTex(cv) {
+  const t = new THREE.CanvasTexture(cv);
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.encoding = THREE.sRGBEncoding; t.generateMipmaps = true;
+  return t;
+}
+function makeSquareTex(fn) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+  paintTile(cv.getContext('2d'), 0, 64, fn);
+  return canvasTex(cv);
+}
+function makeGlowTex() {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+  const g = cv.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,60,40,1)'); gr.addColorStop(0.3, 'rgba(255,30,20,.55)'); gr.addColorStop(1, 'rgba(255,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; return t;
+}
+
+// ------------------------------------------------------------------ three.js setup
+const canvas = $('c');
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+} catch (e) {
+  const f = $('fatal'); f.hidden = false; f.textContent = 'WebGL is not available in this browser, so the game cannot start.';
+  $('play').disabled = true; return;
+}
+renderer.outputEncoding = THREE.sRGBEncoding;
+let quality = 'ultra';
+let targetPR = Math.min(window.devicePixelRatio || 1, 3);
+let curPR = targetPR;
+renderer.setPixelRatio(curPR);
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+const scene = new THREE.Scene();
+const daySky = new THREE.Color(0x8fb8e8), nightSky = new THREE.Color(0x05060c), skyCol = new THREE.Color();
+scene.background = skyCol; scene.fog = new THREE.Fog(0x000000, 10, 60);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.08, 220);
+camera.rotation.order = 'YXZ';
+scene.add(camera);
+const hemi = new THREE.HemisphereLight(0xbfd8ff, 0x3a2e24, 0.7); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff1dc, 0.9); sun.position.set(30, 50, 20); scene.add(sun);
+const flash = new THREE.SpotLight(0xfff0cf, 0, 30, Math.PI / 6.5, 0.55, 1.4);
+flash.position.set(0, 0, 0); camera.add(flash); camera.add(flash.target); flash.target.position.set(0, -0.08, -1);
+
+const atlasCanvas = makeAtlas();
+const atlasTex = canvasTex(atlasCanvas);
+atlasTex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+const worldMat = new THREE.MeshPhongMaterial({ map: atlasTex, vertexColors: true, shininess: 0, specular: new THREE.Color(0x000000) });
+
+// selection outline
+const selBox = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1.004, 1.004, 1.004)), new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55 }));
+selBox.visible = false; scene.add(selBox);
+
+// ------------------------------------------------------------------ chunk meshing with per-vertex ambient occlusion
+const FACES = [ // n = normal, u/v tangents with u x v = n, s = face shade
+  { n: [1, 0, 0], u: [0, 0, -1], v: [0, 1, 0], s: 0.8 },
+  { n: [-1, 0, 0], u: [0, 0, 1], v: [0, 1, 0], s: 0.8 },
+  { n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, -1], s: 1.0 },
+  { n: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1], s: 0.5 },
+  { n: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0], s: 0.7 },
+  { n: [0, 0, -1], u: [-1, 0, 0], v: [0, 1, 0], s: 0.7 }
+];
+const CORNERS = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+const chunkMeshes = new Array(CX * CZ).fill(null);
+const occ = (x, y, z) => getB(x, y, z) !== AIR;
+function buildChunk(cx, cz) {
+  const pos = [], nor = [], uv = [], col = [], ind = []; let vi = 0;
+  const TS = 1 / 16, PU = 0.5 / 1024, PV = 0.5 / 64;
+  for (let x = cx * CH; x < (cx + 1) * CH; x++) for (let z = cz * CH; z < (cz + 1) * CH; z++) for (let y = 0; y < H; y++) {
+    const b = blocks[idx(x, y, z)]; if (b === AIR) continue;
+    const t = TILES[b];
+    for (let f = 0; f < 6; f++) {
+      const F = FACES[f];
+      const nx = x + F.n[0], ny = y + F.n[1], nz = z + F.n[2];
+      if (getB(nx, ny, nz) !== AIR) continue;      // face hidden by neighbour
+      if (f === 3 && y === 0) continue;             // nobody sees the bottom of the world
+      const tile = f === 2 ? t[0] : f === 3 ? t[1] : t[2];
+      const u0 = tile * TS + PU, u1 = (tile + 1) * TS - PU;
+      const cxp = x + 0.5 + F.n[0] * 0.5, cyp = y + 0.5 + F.n[1] * 0.5, czp = z + 0.5 + F.n[2] * 0.5;
+      const ao = [0, 0, 0, 0];
+      for (let k = 0; k < 4; k++) {
+        const su = CORNERS[k][0], sv = CORNERS[k][1];
+        pos.push(cxp + (F.u[0] * su + F.v[0] * sv) * 0.5, cyp + (F.u[1] * su + F.v[1] * sv) * 0.5, czp + (F.u[2] * su + F.v[2] * sv) * 0.5);
+        nor.push(F.n[0], F.n[1], F.n[2]);
+        uv.push(su < 0 ? u0 : u1, sv < 0 ? PV : 1 - PV);
+        const s1 = occ(nx + F.u[0] * su, ny + F.u[1] * su, nz + F.u[2] * su);
+        const s2 = occ(nx + F.v[0] * sv, ny + F.v[1] * sv, nz + F.v[2] * sv);
+        const cc = occ(nx + F.u[0] * su + F.v[0] * sv, ny + F.u[1] * su + F.v[1] * sv, nz + F.u[2] * su + F.v[2] * sv);
+        const a = (s1 && s2) ? 0 : 3 - ((s1 ? 1 : 0) + (s2 ? 1 : 0) + (cc ? 1 : 0));
+        ao[k] = a;
+        const sh = F.s * (0.55 + 0.15 * a); col.push(sh, sh, sh);
+      }
+      if (ao[0] + ao[2] > ao[1] + ao[3]) ind.push(vi + 1, vi + 2, vi + 3, vi + 1, vi + 3, vi);
+      else ind.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+      vi += 4;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(ind);
+  return g;
+}
+function rebuildChunk(cx, cz) {
+  const i = cx * CZ + cz;
+  if (chunkMeshes[i]) { scene.remove(chunkMeshes[i]); chunkMeshes[i].geometry.dispose(); }
+  const m = new THREE.Mesh(buildChunk(cx, cz), worldMat);
+  m.frustumCulled = true; scene.add(m); chunkMeshes[i] = m;
+}
+function rebuildAll() { for (let cx = 0; cx < CX; cx++) for (let cz = 0; cz < CZ; cz++) rebuildChunk(cx, cz); }
+function setBlock(x, y, z, b) {
+  if (x < 0 || x >= W || z < 0 || z >= D || y < 0 || y >= H) return;
+  blocks[idx(x, y, z)] = b;
+  const cx = Math.floor(x / CH), cz = Math.floor(z / CH);
+  rebuildChunk(cx, cz);
+  // neighbours share faces and AO with this block, so edge edits rebuild them too
+  if (x % CH === 0 && cx > 0) rebuildChunk(cx - 1, cz);
+  if (x % CH === CH - 1 && cx < CX - 1) rebuildChunk(cx + 1, cz);
+  if (z % CH === 0 && cz > 0) rebuildChunk(cx, cz - 1);
+  if (z % CH === CH - 1 && cz < CZ - 1) rebuildChunk(cx, cz + 1);
+}
+
+// ------------------------------------------------------------------ physics shared by player and zombies
+function collides(e, x, y, z) {
+  const x0 = Math.floor(x - e.hw), x1 = Math.floor(x + e.hw), y0 = Math.floor(y), y1 = Math.floor(y + e.h - 0.001), z0 = Math.floor(z - e.hw), z1 = Math.floor(z + e.hw);
+  for (let bx = x0; bx <= x1; bx++) for (let by = y0; by <= y1; by++) for (let bz = z0; bz <= z1; bz++) if (isSolid(bx, by, bz)) return true;
+  return false;
+}
+function moveEntity(e, dt) {
+  e.vy -= 26 * dt; if (e.vy < -45) e.vy = -45;
+  e.blocked = false;
+  const nx = e.x + e.vx * dt;
+  if (!collides(e, nx, e.y, e.z)) e.x = nx; else { e.vx = 0; e.blocked = true; }
+  const nz = e.z + e.vz * dt;
+  if (!collides(e, e.x, e.y, nz)) e.z = nz; else { e.vz = 0; e.blocked = true; }
+  // vertical motion in small steps so landings snap to the block surface
+  let dy = e.vy * dt; const steps = Math.max(1, Math.ceil(Math.abs(dy) / 0.08)); const sd = dy / steps;
+  e.onGround = false;
+  for (let i = 0; i < steps; i++) {
+    const ny = e.y + sd;
+    if (!collides(e, e.x, ny, e.z)) e.y = ny;
+    else { if (e.vy < 0) { e.onGround = true; e.y = Math.round(e.y * 100) / 100; } e.vy = 0; break; }
+  }
+}
+// Amanatides–Woo voxel ray march. Returns the hit block, the adjacent empty block, and the distance.
+function raycastBlocks(ox, oy, oz, dx, dy, dz, maxD) {
+  let x = Math.floor(ox), y = Math.floor(oy), z = Math.floor(oz);
+  const sx = dx > 0 ? 1 : dx < 0 ? -1 : 0, sy = dy > 0 ? 1 : dy < 0 ? -1 : 0, sz = dz > 0 ? 1 : dz < 0 ? -1 : 0;
+  const tdx = sx ? Math.abs(1 / dx) : Infinity, tdy = sy ? Math.abs(1 / dy) : Infinity, tdz = sz ? Math.abs(1 / dz) : Infinity;
+  let tmx = sx > 0 ? (x + 1 - ox) * tdx : sx < 0 ? (ox - x) * tdx : Infinity;
+  let tmy = sy > 0 ? (y + 1 - oy) * tdy : sy < 0 ? (oy - y) * tdy : Infinity;
+  let tmz = sz > 0 ? (z + 1 - oz) * tdz : sz < 0 ? (oz - z) * tdz : Infinity;
+  let px = x, py = y, pz = z, t = 0;
+  for (let i = 0; i < 64 && t <= maxD; i++) {
+    if (x >= 0 && x < W && y >= 0 && y < H && z >= 0 && z < D && blocks[idx(x, y, z)] !== AIR) return { x, y, z, px, py, pz, t };
+    px = x; py = y; pz = z;
+    if (tmx < tmy && tmx < tmz) { x += sx; t = tmx; tmx += tdx; }
+    else if (tmy < tmz) { y += sy; t = tmy; tmy += tdy; }
+    else { z += sz; t = tmz; tmz += tdz; }
+  }
+  return null;
+}
+
+// ------------------------------------------------------------------ audio (all procedural, created after the first tap)
+const sfx = (function () {
+  let ctx = null, master = null, windGain = null;
+  function init() {
+    if (ctx) return;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      ctx = new AC(); master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
+      // looping wind bed
+      const len = ctx.sampleRate * 2, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 420; bp.Q.value = 0.6;
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 0.11; const lg = ctx.createGain(); lg.gain.value = 220; lfo.connect(lg); lg.connect(bp.frequency);
+      windGain = ctx.createGain(); windGain.gain.value = 0;
+      src.connect(bp); bp.connect(windGain); windGain.connect(master); src.start(); lfo.start();
+    } catch (e) { console.warn('Audio unavailable', e); ctx = null; }
+  }
+  function resume() { if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {}); }
+  function out(panv) { if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = clamp(panv || 0, -1, 1); p.connect(master); return p; } return master; }
+  function noise(dur) { const len = Math.max(1, (ctx.sampleRate * dur) | 0), buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1; const s = ctx.createBufferSource(); s.buffer = buf; return s; }
+  function groan(dist, panv, intense) {
+    if (!ctx) return; const t = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type = 'sawtooth'; const f = 58 + Math.random() * 48;
+    o.frequency.setValueAtTime(f, t); o.frequency.linearRampToValueAtTime(f * (intense ? 1.6 : 0.8), t + 1.2);
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 4 + Math.random() * 4; const lg = ctx.createGain(); lg.gain.value = 9; lfo.connect(lg); lg.connect(o.frequency);
+    const flt = ctx.createBiquadFilter(); flt.type = 'lowpass'; flt.Q.value = 5;
+    flt.frequency.setValueAtTime(260, t); flt.frequency.linearRampToValueAtTime(intense ? 1400 : 900, t + 0.4); flt.frequency.linearRampToValueAtTime(240, t + 1.3);
+    const g = ctx.createGain(); const vol = (intense ? 0.7 : 0.38) / (1 + dist / 5);
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.22); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.45);
+    const br = noise(1.4); const bf = ctx.createBiquadFilter(); bf.type = 'bandpass'; bf.frequency.value = 900; const bg = ctx.createGain(); bg.gain.value = vol * 0.25;
+    const p = out(panv);
+    o.connect(flt); flt.connect(g); g.connect(p); br.connect(bf); bf.connect(bg); bg.connect(g);
+    o.start(t); lfo.start(t); br.start(t); o.stop(t + 1.5); lfo.stop(t + 1.5);
+  }
+  function scream(panv) {
+    if (!ctx) return; const t = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(420, t); o.frequency.exponentialRampToValueAtTime(110, t + 0.55);
+    const o2 = ctx.createOscillator(); o2.type = 'square'; o2.frequency.setValueAtTime(433, t); o2.frequency.exponentialRampToValueAtTime(118, t + 0.55);
+    const ws = ctx.createWaveShaper(); const curve = new Float32Array(256); for (let i = 0; i < 256; i++) { const x = i / 128 - 1; curve[i] = Math.tanh(x * 4); } ws.curve = curve;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.75, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+    const p = out(panv); o.connect(ws); o2.connect(ws); ws.connect(g); g.connect(p); o.start(t); o2.start(t); o.stop(t + 0.75); o2.stop(t + 0.75);
+  }
+  function thump(when, vol) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(62, when); o.frequency.exponentialRampToValueAtTime(38, when + 0.13);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, when); g.gain.linearRampToValueAtTime(vol, when + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, when + 0.16);
+    o.connect(g); g.connect(master); o.start(when); o.stop(when + 0.2);
+  }
+  function heartbeat(vol) { if (!ctx) return; const t = ctx.currentTime; thump(t, vol); thump(t + 0.17, vol * 0.65); }
+  function hurt() {
+    if (!ctx) return; const t = ctx.currentTime;
+    const n = noise(0.3); const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 500; const g = ctx.createGain(); g.gain.setValueAtTime(0.7, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+    const o = ctx.createOscillator(); o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.25); const og = ctx.createGain(); og.gain.setValueAtTime(0.6, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+    n.connect(f); f.connect(g); g.connect(master); o.connect(og); og.connect(master); n.start(t); o.start(t); o.stop(t + 0.3);
+  }
+  function click(freq, dur, vol) {
+    if (!ctx) return; const t = ctx.currentTime;
+    const n = noise(dur); const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = 0.8;
+    const g = ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    n.connect(f); f.connect(g); g.connect(master); n.start(t);
+  }
+  function hit(panv) { if (!ctx) return; click(260, 0.16, 0.8); const t = ctx.currentTime; const o = ctx.createOscillator(); o.frequency.setValueAtTime(95, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.15); const g = ctx.createGain(); g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18); const p = out(panv); o.connect(g); g.connect(p); o.start(t); o.stop(t + 0.2); }
+  function setWind(v) { if (windGain) windGain.gain.setTargetAtTime(v, ctx.currentTime, 0.5); }
+  return { init, resume, groan, scream, heartbeat, hurt, hit, setWind, breakBlock: () => click(1600, 0.09, 0.5), place: () => click(600, 0.07, 0.45) };
+})();
+
+// ------------------------------------------------------------------ zombies
+const zombieTex = (function () {
+  texRnd = mulberry32(999);
+  const skin = makeSquareTex((x, y) => {
+    const b = blotch(x, y, 6, 100) * 60 + grain(20);
+    const vein = Math.abs(vn(x / 5 + 120, y / 5) - 0.5) < 0.012 ? -40 : 0;
+    const rot = vn2(x / 4 + 130, y / 4) > 0.8 ? 1 : 0; const blood = vn2(x / 3 + 140, y / 3) > 0.9 ? 1 : 0;
+    return [92 + b * 0.7 + vein - 20 * rot + 40 * blood, 112 + b + vein - 40 * rot - 50 * blood, 86 + b * 0.6 + vein - 30 * rot - 45 * blood];
+  });
+  const shirt = makeSquareTex((x, y) => {
+    const b = blotch(x, y, 7, 200) * 40 + grain(18); const hole = vn2(x / 3 + 210, y / 3) > 0.84 ? 1 : 0; const blood = vn2(x / 4 + 220, y / 4) > 0.86 ? 1 : 0;
+    if (hole) return [70 + b * 0.5, 84 + b * 0.6, 64 + b * 0.4]; // torn: skin shows through
+    return [36 + b - 10 * blood + 50 * blood, 58 + b - 40 * blood, 64 + b - 40 * blood];
+  });
+  const pants = makeSquareTex((x, y) => { const b = blotch(x, y, 6, 300) * 36 + grain(16); const wear = vn2(x / 3 + 310, y / 3) > 0.88 ? -25 : 0; return [40 + b + wear, 40 + b + wear, 66 + b + wear]; });
+  return { skin, shirt, pants, glow: makeGlowTex() };
+})();
+const ZG = {
+  leg: new THREE.BoxGeometry(0.26, 1.0, 0.26), torso: new THREE.BoxGeometry(0.62, 0.95, 0.3), arm: new THREE.BoxGeometry(0.2, 1.1, 0.2),
+  head: new THREE.BoxGeometry(0.62, 0.62, 0.62), jaw: new THREE.BoxGeometry(0.5, 0.16, 0.46), socket: new THREE.BoxGeometry(0.2, 0.15, 0.04),
+  eye: new THREE.BoxGeometry(0.09, 0.07, 0.05), hit: new THREE.BoxGeometry(1.0, 2.7, 1.0)
+};
+const zombies = [];
+const hitboxes = [];
+function buildZombie() {
+  const tint = new THREE.Color().setHSL(0.26 + Math.random() * 0.12, 0.35, 0.82);
+  const skinMat = new THREE.MeshPhongMaterial({ map: zombieTex.skin, color: tint, shininess: 4, specular: new THREE.Color(0x111111) });
+  const shirtMat = new THREE.MeshPhongMaterial({ map: zombieTex.shirt, shininess: 0, specular: new THREE.Color(0x000000) });
+  const pantsMat = new THREE.MeshPhongMaterial({ map: zombieTex.pants, shininess: 0, specular: new THREE.Color(0x000000) });
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff2a1e, fog: false });
+  const sockMat = new THREE.MeshBasicMaterial({ color: 0x050405 });
+  const g = new THREE.Group();
+  const legL = new THREE.Group(), legR = new THREE.Group(); legL.position.set(-0.16, 1.0, 0); legR.position.set(0.16, 1.0, 0);
+  const lm = new THREE.Mesh(ZG.leg, pantsMat); lm.position.y = -0.5; legL.add(lm); const rm = new THREE.Mesh(ZG.leg, pantsMat); rm.position.y = -0.5; legR.add(rm);
+  const torso = new THREE.Mesh(ZG.torso, shirtMat); torso.position.y = 1.475;
+  const armL = new THREE.Group(), armR = new THREE.Group(); armL.position.set(-0.42, 1.86, 0); armR.position.set(0.42, 1.86, 0);
+  const am = new THREE.Mesh(ZG.arm, skinMat); am.position.y = -0.52; armL.add(am); const am2 = new THREE.Mesh(ZG.arm, skinMat); am2.position.y = -0.52; armR.add(am2);
+  armL.rotation.x = -Math.PI / 2 + 0.15; armR.rotation.x = -Math.PI / 2 + 0.05;
+  const head = new THREE.Group(); head.position.y = 1.95;
+  const hm = new THREE.Mesh(ZG.head, skinMat); hm.position.y = 0.31; head.add(hm);
+  const jaw = new THREE.Mesh(ZG.jaw, skinMat); jaw.position.set(0, -0.06, 0.06); head.add(jaw);
+  const glowSprites = [];
+  for (const sx of [-0.15, 0.15]) {
+    const s = new THREE.Mesh(ZG.socket, sockMat); s.position.set(sx, 0.36, 0.315); head.add(s);
+    const e = new THREE.Mesh(ZG.eye, eyeMat); e.position.set(sx, 0.355, 0.33); head.add(e);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: zombieTex.glow, color: 0xff3020, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    sp.position.set(sx, 0.355, 0.36); sp.scale.set(0.32, 0.32, 1); head.add(sp); glowSprites.push(sp);
+  }
+  const hit = new THREE.Mesh(ZG.hit, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })); hit.position.y = 1.35;
+  g.add(legL, legR, torso, armL, armR, head, hit);
+  return { group: g, legL, legR, armL, armR, head, jaw, glowSprites, hit, mats: [skinMat, shirtMat, pantsMat] };
+}
+function spawnZombie(x, z) {
+  const m = buildZombie();
+  const zb = { x, y: groundY(x, z), z, vx: 0, vy: 0, vz: 0, hw: 0.3, h: 2.3, hp: 3, yaw: Math.random() * 6.28, state: 'hunt',
+    m, walk: 0, lungeT: 2 + Math.random() * 3, lunge: 0, atkCd: 1.2, kb: 0, flash: 0, twitch: 0, twitchT: 1 + Math.random() * 4, tilt: 0,
+    groanT: 1 + Math.random() * 4, scared: false, seed: Math.random() * 100, t: 0, onGround: false, blocked: false };
+  m.hit.userData.z = zb;
+  m.group.position.set(zb.x, zb.y, zb.z); scene.add(m.group); zombies.push(zb); hitboxes.push(m.hit);
+  return zb;
+}
+function removeZombie(zb) {
+  scene.remove(zb.m.group); zb.m.mats.forEach((mm) => mm.dispose());
+  zb.m.glowSprites.forEach((s) => s.material.dispose());
+  const i = zombies.indexOf(zb); if (i >= 0) zombies.splice(i, 1);
+  const j = hitboxes.indexOf(zb.m.hit); if (j >= 0) hitboxes.splice(j, 1);
+}
+function clearZombies() { while (zombies.length) removeZombie(zombies[0]); }
+
+// ------------------------------------------------------------------ game state
+const DAY = 45, DUSK = 10, NIGHT = 55, DAWN = 5, CYCLE = DAY + DUSK + NIGHT + DAWN, NIGHTS_TO_WIN = 3;
+let state = 'menu';
+let dayTime = DAY + DUSK * 0.75, nights = 0, kills = 0, alive = 0, spawnT = 0, wasNight = false, time = 0, shake = 0, hudT = 0, heartT = 0, dawnShrieked = false;
+let slot = 0, msgT = 0;
+const player = { x: W / 2 + 0.5, y: 20, z: D / 2 + 0.5, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, hw: 0.3, h: 1.8, hp: 10, inv: 0, onGround: false, blocked: false, walk: 0 };
+const dirVec = new THREE.Vector3();
+const ray = new THREE.Raycaster(); ray.far = 4.6;
+
+function daylight() {
+  const t = dayTime;
+  if (t < DAY) return 1;
+  if (t < DAY + DUSK) return 1 - (t - DAY) / DUSK;
+  if (t < DAY + DUSK + NIGHT) return 0;
+  return (t - (DAY + DUSK + NIGHT)) / DAWN;
+}
+function fmt(s) { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+function showMsg(text, dur) { const m = $('msg'); m.textContent = text; m.classList.add('show'); msgT = dur || 3.5; }
+
+function resetGame() {
+  clearZombies();
+  generateWorld((Math.random() * 1e9) | 0);
+  rebuildAll();
+  player.x = W / 2 + 0.5; player.z = D / 2 + 0.5; player.y = groundY(player.x, player.z) + 0.01;
+  player.vx = player.vy = player.vz = 0; player.yaw = Math.PI * 0.25; player.pitch = 0; player.hp = 10; player.inv = 0;
+  dayTime = 0; nights = 0; kills = 0; alive = 0; spawnT = 0; wasNight = false; shake = 0; dawnShrieked = false;
+  updateHearts(); $('kills').textContent = '0 slain';
+}
+function startGame() {
+  sfx.init(); sfx.resume();
+  resetGame();
+  state = 'play';
+  $('start').hidden = true; $('end').hidden = true; $('hud').hidden = false;
+  showMsg('Daylight. Build something with a roof.', 4);
+}
+function endGame(won) {
+  state = won ? 'win' : 'over';
+  $('hud').hidden = true;
+  $('endTitle').textContent = won ? 'Dawn, again.' : 'You died.';
+  $('endText').textContent = won ? 'Three nights, and the ground gave them back every morning. You outlasted them.' : 'They were faster than you thought. They always are when you look away.';
+  $('sNights').textContent = String(won ? NIGHTS_TO_WIN : nights);
+  $('sKills').textContent = String(kills);
+  $('sTime').textContent = fmt(alive);
+  $('end').hidden = false;
+  if (document.exitPointerLock) { try { document.exitPointerLock(); } catch (e) { /* not locked */ } }
+}
+
+// ------------------------------------------------------------------ HUD
+function updateHearts() {
+  const hp = clamp(player.hp, 0, 10);
+  $('hearts').innerHTML = '<span>' + '♥'.repeat(hp) + '</span><span class="off">' + '♥'.repeat(10 - hp) + '</span>';
+}
+(function buildHotbar() {
+  const hb = $('hotbar'); const g = atlasCanvas;
+  HOTBAR.forEach((b, i) => {
+    const s = document.createElement('div'); s.className = 'slot' + (i === 0 ? ' sel' : ''); s.setAttribute('role', 'button'); s.setAttribute('aria-label', 'Block ' + (i + 1));
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+    cv.getContext('2d').drawImage(g, TILES[b][2] * 64, 0, 64, 64, 0, 0, 64, 64);
+    s.appendChild(cv); hb.appendChild(s);
+    const pick = (e) => { e.preventDefault(); e.stopPropagation(); selectSlot(i); };
+    s.addEventListener('touchstart', pick, { passive: false }); s.addEventListener('mousedown', pick);
+  });
+})();
+function selectSlot(i) { slot = i; [...$('hotbar').children].forEach((el, k) => el.classList.toggle('sel', k === i)); }
+function hurtPlayer(dmg, from) {
+  if (player.inv > 0 || state !== 'play') return;
+  player.hp -= dmg; player.inv = 0.7; shake = Math.max(shake, 0.35); updateHearts(); sfx.hurt();
+  $('dmg').style.opacity = '1';
+  if (from) { const dx = player.x - from.x, dz = player.z - from.z, l = Math.hypot(dx, dz) || 1; player.vx += dx / l * 6; player.vz += dz / l * 6; player.vy = Math.max(player.vy, 3); }
+  if (player.hp <= 0) endGame(false);
+}
+
+// ------------------------------------------------------------------ actions
+function cameraRay() { camera.getWorldDirection(dirVec); return raycastBlocks(camera.position.x, camera.position.y, camera.position.z, dirVec.x, dirVec.y, dirVec.z, 5.5); }
+function primaryAction() {
+  if (state !== 'play') return;
+  camera.getWorldDirection(dirVec); ray.set(camera.position, dirVec);
+  const blk = cameraRay();
+  const hits = hitboxes.length ? ray.intersectObjects(hitboxes, false) : [];
+  const zh = hits.find((h) => h.object.userData.z && h.object.userData.z.state === 'hunt' && (!blk || h.distance < blk.t));
+  if (zh) {
+    const zb = zh.object.userData.z; zb.hp -= 1; zb.flash = 0.25; zb.kb = 0.35;
+    const dx = zb.x - player.x, dz = zb.z - player.z, l = Math.hypot(dx, dz) || 1;
+    zb.vx = dx / l * 7; zb.vz = dz / l * 7; zb.vy = 4.5;
+    sfx.hit(panOf(zb)); shake = Math.max(shake, 0.12);
+    if (zb.hp <= 0) { zb.state = 'dead'; zb.t = 0; kills++; $('kills').textContent = kills + ' slain'; }
+    return;
+  }
+  if (blk && blk.y > 0) { setBlock(blk.x, blk.y, blk.z, AIR); sfx.breakBlock(); }
+}
+function placeBlock() {
+  if (state !== 'play') return;
+  const blk = cameraRay(); if (!blk) return;
+  const { px, py, pz } = blk;
+  if (px < 0 || px >= W || pz < 0 || pz >= D || py < 0 || py >= H) return;
+  // never place a block inside the player or a zombie
+  const overlaps = (e) => e.x + e.hw > px && e.x - e.hw < px + 1 && e.y + e.h > py && e.y < py + 1 && e.z + e.hw > pz && e.z - e.hw < pz + 1;
+  if (overlaps(player) || zombies.some(overlaps)) return;
+  setBlock(px, py, pz, HOTBAR[slot]); sfx.place();
+}
+function panOf(zb) { const dx = zb.x - player.x, dz = zb.z - player.z, l = Math.hypot(dx, dz) || 1; const rx = Math.cos(player.yaw), rz = -Math.sin(player.yaw); return (dx * rx + dz * rz) / l; }
+
+// ------------------------------------------------------------------ input
+const keys = {}; let jumpHeld = false;
+window.addEventListener('keydown', (e) => { keys[e.code] = true; if (e.code === 'Space') { e.preventDefault(); } if (/^Digit[1-4]$/.test(e.code)) selectSlot(+e.code[5] - 1); });
+window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+
+let joyId = null, joyOX = 0, joyOY = 0, mvX = 0, mvY = 0;
+let lookId = null, lookX = 0, lookY = 0, lookSX = 0, lookSY = 0, lookT = 0, lookMoved = false, longFired = false;
+const joyEl = $('joy'), knobEl = $('knob');
+function isUI(t) { return !!(t && t.closest && t.closest('.ui')); }
+document.addEventListener('touchstart', (e) => {
+  if (state !== 'play') return;
+  for (const t of e.changedTouches) {
+    if (isUI(t.target)) continue;
+    e.preventDefault();
+    if (t.clientX < window.innerWidth * 0.42 && joyId === null) {
+      joyId = t.identifier; joyOX = t.clientX; joyOY = t.clientY;
+      joyEl.style.display = knobEl.style.display = 'block';
+      joyEl.style.transform = 'translate(' + (joyOX - 60) + 'px,' + (joyOY - 60) + 'px)'; knobEl.style.transform = 'translate(' + (joyOX - 26) + 'px,' + (joyOY - 26) + 'px)';
+    } else if (lookId === null) {
+      lookId = t.identifier; lookX = lookSX = t.clientX; lookY = lookSY = t.clientY; lookT = performance.now(); lookMoved = false; longFired = false;
+    }
+  }
+}, { passive: false });
+document.addEventListener('touchmove', (e) => {
+  if (state !== 'play') return;
+  for (const t of e.changedTouches) {
+    if (t.identifier === joyId) {
+      e.preventDefault();
+      let dx = t.clientX - joyOX, dy = t.clientY - joyOY; const l = Math.hypot(dx, dy); if (l > 56) { dx *= 56 / l; dy *= 56 / l; }
+      mvX = dx / 56; mvY = dy / 56;
+      knobEl.style.transform = 'translate(' + (joyOX + dx - 26) + 'px,' + (joyOY + dy - 26) + 'px)';
+    } else if (t.identifier === lookId) {
+      e.preventDefault();
+      const dx = t.clientX - lookX, dy = t.clientY - lookY; lookX = t.clientX; lookY = t.clientY;
+      if (Math.hypot(t.clientX - lookSX, t.clientY - lookSY) > 12) lookMoved = true;
+      player.yaw -= dx * 0.0052; player.pitch = clamp(player.pitch - dy * 0.0052, -1.5, 1.5);
+    }
+  }
+}, { passive: false });
+function touchEnd(e) {
+  for (const t of e.changedTouches) {
+    if (t.identifier === joyId) { joyId = null; mvX = mvY = 0; joyEl.style.display = knobEl.style.display = 'none'; }
+    else if (t.identifier === lookId) {
+      lookId = null;
+      if (state === 'play' && !lookMoved && !longFired && performance.now() - lookT < 320) primaryAction();
+    }
+  }
+}
+document.addEventListener('touchend', touchEnd, { passive: false });
+document.addEventListener('touchcancel', touchEnd, { passive: false });
+
+// buttons
+function hold(el, down, up) {
+  el.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); down(); }, { passive: false });
+  el.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); if (up) up(); }, { passive: false });
+  el.addEventListener('touchcancel', () => { if (up) up(); });
+  el.addEventListener('mousedown', (e) => { e.stopPropagation(); down(); });
+  el.addEventListener('mouseup', (e) => { e.stopPropagation(); if (up) up(); });
+}
+hold($('btnJump'), () => { jumpHeld = true; }, () => { jumpHeld = false; });
+hold($('btnPlace'), () => placeBlock());
+
+// mouse / pointer lock (desktop)
+let dragging = false, dragMoved = false, dX = 0, dY = 0, lockUnavailable = false;
+const locked = () => document.pointerLockElement === canvas;
+document.addEventListener('pointerlockerror', () => { lockUnavailable = true; });
+canvas.addEventListener('mousedown', (e) => {
+  if (state !== 'play') return;
+  if (e.button === 2) { placeBlock(); return; }
+  if (locked()) { primaryAction(); return; }
+  dragging = true; dragMoved = false; dX = e.clientX; dY = e.clientY;
+});
+window.addEventListener('mousemove', (e) => {
+  if (state !== 'play') return;
+  if (locked()) { player.yaw -= e.movementX * 0.0026; player.pitch = clamp(player.pitch - e.movementY * 0.0026, -1.5, 1.5); }
+  else if (dragging) { const dx = e.clientX - dX, dy = e.clientY - dY; dX = e.clientX; dY = e.clientY; if (Math.abs(dx) + Math.abs(dy) > 3) dragMoved = true; player.yaw -= dx * 0.0045; player.pitch = clamp(player.pitch - dy * 0.0045, -1.5, 1.5); }
+});
+window.addEventListener('mouseup', (e) => {
+  if (!dragging) return; dragging = false;
+  if (e.button !== 0 || dragMoved || state !== 'play') return;
+  if (!lockUnavailable && canvas.requestPointerLock) {
+    try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => { lockUnavailable = true; }); } catch (err) { lockUnavailable = true; }
+    setTimeout(() => { if (!locked()) lockUnavailable = true; }, 400);
+    if (!lockUnavailable) return; // the first click only captures the mouse
+  }
+  primaryAction();
+});
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ------------------------------------------------------------------ per-frame update
+function update(dt) {
+  alive += dt; dayTime += dt;
+  if (dayTime >= CYCLE) { dayTime -= CYCLE; nights++; dawnShrieked = false; if (nights >= NIGHTS_TO_WIN) { endGame(true); return; } showMsg('Morning. Night ' + (nights + 1) + ' comes at dusk.', 4); }
+  const L = daylight();
+  const night = L < 0.2;
+  if (night && !wasNight) { showMsg('Night ' + (nights + 1) + '. Don\'t turn your back.', 4.5); }
+  wasNight = night;
+
+  // --- player movement
+  let mx = mvX, mz = -mvY;
+  if (keys.KeyW || keys.ArrowUp) mz += 1; if (keys.KeyS || keys.ArrowDown) mz -= 1; if (keys.KeyA || keys.ArrowLeft) mx -= 1; if (keys.KeyD || keys.ArrowRight) mx += 1;
+  const ml = Math.hypot(mx, mz); if (ml > 1) { mx /= ml; mz /= ml; }
+  const speed = 4.4;
+  const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw), rx = Math.cos(player.yaw), rz = -Math.sin(player.yaw);
+  const tvx = (fx * mz + rx * mx) * speed, tvz = (fz * mz + rz * mx) * speed;
+  // knockback blends back into control
+  player.vx = lerp(player.vx, tvx, 1 - Math.exp(-14 * dt)); player.vz = lerp(player.vz, tvz, 1 - Math.exp(-14 * dt));
+  if ((keys.Space || jumpHeld) && player.onGround) player.vy = 8.6;
+  moveEntity(player, dt);
+  if (player.y < -5) { player.y = groundY(player.x, player.z) + 0.01; player.vy = 0; }
+  if (ml > 0.1 && player.onGround) player.walk += dt * speed;
+  player.inv = Math.max(0, player.inv - dt);
+  const bob = (ml > 0.1 && player.onGround) ? Math.sin(player.walk * 2.2) * 0.045 : 0;
+  shake = Math.max(0, shake - dt * 1.2);
+  camera.position.set(player.x + (Math.random() - 0.5) * shake * 0.25, player.y + 1.62 + bob + (Math.random() - 0.5) * shake * 0.25, player.z + (Math.random() - 0.5) * shake * 0.25);
+  camera.rotation.set(player.pitch, player.yaw, (Math.random() - 0.5) * shake * 0.08);
+
+  // long press on the look side places a block
+  if (lookId !== null && !lookMoved && !longFired && performance.now() - lookT > 450) { longFired = true; placeBlock(); }
+
+  // --- block selection outline
+  const sel = cameraRay();
+  if (sel && sel.y > 0) { selBox.visible = true; selBox.position.set(sel.x + 0.5, sel.y + 0.5, sel.z + 0.5); } else selBox.visible = false;
+
+  // --- spawning
+  const maxZ = 5 + nights * 3;
+  spawnT -= dt;
+  if (night && zombies.length < maxZ && spawnT <= 0) {
+    spawnT = 2.4;
+    camera.getWorldDirection(dirVec);
+    for (let tries = 0; tries < 8; tries++) {
+      const a = Math.random() * Math.PI * 2, r = 15 + Math.random() * 13;
+      const x = clamp(player.x + Math.sin(a) * r, 2.5, W - 2.5), z = clamp(player.z + Math.cos(a) * r, 2.5, D - 2.5);
+      const dx = x - player.x, dz = z - player.z, l = Math.hypot(dx, dz) || 1;
+      const facing = (dirVec.x * dx + dirVec.z * dz) / l;
+      if (l < 9) continue;
+      if (facing < 0.35 || tries === 7) { spawnZombie(x, z); break; }
+    }
+  }
+
+  // --- zombies
+  camera.getWorldDirection(dirVec);
+  let nearest = 1e9;
+  for (let i = zombies.length - 1; i >= 0; i--) {
+    const zb = zombies[i];
+    if (zb.state === 'hunt' && L > 0.3) { zb.state = 'sink'; zb.t = 0; if (!dawnShrieked) { dawnShrieked = true; sfx.scream(panOf(zb)); showMsg('Dawn. The ground takes them back.', 4); } }
+    updateZombie(zb, dt, false);
+    if (zb.state === 'hunt') { const d = Math.hypot(zb.x - player.x, zb.z - player.z); if (d < nearest) nearest = d; }
+    if ((zb.state === 'dead' && zb.t > 2.2) || (zb.state === 'sink' && zb.t > 2.6)) removeZombie(zb);
+  }
+
+  // --- heartbeat and wind
+  heartT -= dt;
+  const lowHp = player.hp <= 3;
+  if ((nearest < 10 || lowHp) && heartT <= 0) { const k = clamp((10 - Math.min(nearest, 10)) / 10, lowHp ? 0.5 : 0, 1); sfx.heartbeat(0.35 + k * 0.5); heartT = lerp(1.15, 0.42, k); }
+  sfx.setWind(night ? 0.22 : L < 0.6 ? 0.1 : 0.03);
+
+  // --- HUD
+  hudT -= dt;
+  if (hudT <= 0) {
+    hudT = 0.2; const c = $('clock');
+    if (dayTime < DAY + DUSK) { c.textContent = 'Day · dusk in ' + fmt(DAY + DUSK - dayTime); c.classList.remove('night'); }
+    else { c.textContent = 'Night ' + (nights + 1) + ' · dawn in ' + fmt(CYCLE - dayTime); c.classList.add('night'); }
+    $('dmg').style.opacity = String(player.inv > 0 ? clamp(player.inv / 0.7, 0, 1) : lowHp ? 0.25 + 0.15 * Math.sin(time * 6) : 0);
+    $('vig').style.opacity = String(lerp(0.75, 0.35, L));
+  }
+  if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').classList.remove('show'); }
+}
+
+function updateZombie(zb, dt, idle) {
+  const m = zb.m; zb.t += dt;
+  if (zb.state === 'dead') {
+    const k = Math.min(1, zb.t / 0.5);
+    m.group.rotation.x = -k * Math.PI / 2; m.group.position.y = zb.y + k * 0.3;
+    m.glowSprites.forEach((s) => { s.material.opacity = 1 - k; });
+    zb.vx = zb.vz = 0; return;
+  }
+  if (zb.state === 'sink') { m.group.position.y = zb.y - zb.t * 1.1; m.head.rotation.x = Math.min(0.9, zb.t); return; }
+
+  const dx = player.x - zb.x, dz = player.z - zb.z, dist = Math.hypot(dx, dz) || 0.001;
+  const facing = (dirVec.x * dx + dirVec.z * dz) / dist; // >0 when the player is looking toward the zombie
+  let speed = 2.0 + nights * 0.3;
+  if (facing < 0.25) speed *= 1.75;  // unseen zombies hurry
+  zb.lungeT -= dt;
+  if (zb.lungeT <= 0) { zb.lungeT = 2.5 + Math.random() * 3.5; if (dist < 12 && dist > 2.5 && Math.random() < 0.6) { zb.lunge = 0.75; sfx.groan(dist, panOf(zb), true); } }
+  if (zb.lunge > 0) { zb.lunge -= dt; speed = 7.2; }
+  const ang = Math.atan2(dx, dz);
+  zb.kb = Math.max(0, zb.kb - dt);
+  if (!idle && zb.kb <= 0) {
+    if (dist > 1.25) { zb.vx = Math.sin(ang) * speed; zb.vz = Math.cos(ang) * speed; zb.walk += dt * speed; }
+    else { zb.vx = zb.vz = 0; }
+  } else if (idle) { zb.vx = zb.vz = 0; }
+  moveEntity(zb, dt);
+  if (zb.blocked && zb.onGround && !idle) zb.vy = 8.6;
+  if (zb.y < -5) { zb.y = groundY(zb.x, zb.z); zb.vy = 0; }
+
+  zb.atkCd -= dt;
+  if (!idle && dist < 1.55 && Math.abs(zb.y - player.y) < 2.2 && zb.atkCd <= 0) { zb.atkCd = 1.1; hurtPlayer(1, zb); sfx.groan(dist, panOf(zb), true); zb.m.armL.rotation.x = -Math.PI / 2 - 0.6; }
+
+  // jump scare: it got close while you weren't looking
+  if (!idle && dist < 2.6 && facing < 0 && !zb.scared) { zb.scared = true; sfx.scream(panOf(zb)); shake = Math.max(shake, 0.5); $('dmg').style.opacity = '0.6'; }
+  if (dist > 6) zb.scared = false;
+
+  zb.groanT -= dt;
+  if (zb.groanT <= 0 && dist < 32) { zb.groanT = 4 + Math.random() * 6; sfx.groan(dist, panOf(zb), false); }
+
+  // orientation + animation
+  zb.yaw = lerpAngle(zb.yaw, ang, 1 - Math.exp(-7 * dt));
+  m.group.rotation.y = zb.yaw; m.group.rotation.x = 0;
+  m.group.position.set(zb.x, zb.y, zb.z);
+  const moving = Math.hypot(zb.vx, zb.vz) > 0.2;
+  const sw = moving ? Math.sin(zb.walk * 1.6) * 0.65 : 0;
+  m.legL.rotation.x = sw; m.legR.rotation.x = -sw;
+  m.armL.rotation.x = lerp(m.armL.rotation.x, -Math.PI / 2 + 0.15 + Math.sin(zb.walk * 1.6 + 1) * 0.12, 1 - Math.exp(-8 * dt));
+  m.armR.rotation.x = -Math.PI / 2 + 0.05 - Math.sin(zb.walk * 1.6) * 0.12;
+  m.group.position.y += moving ? Math.abs(Math.sin(zb.walk * 1.6)) * 0.05 : 0;
+  // head: slow unnatural tilt plus sudden twitches
+  zb.twitchT -= dt;
+  if (zb.twitchT <= 0) { zb.twitchT = 1.5 + Math.random() * 4; zb.twitch = (Math.random() - 0.5) * 1.4; }
+  zb.twitch = lerp(zb.twitch, 0, 1 - Math.exp(-4 * dt));
+  zb.tilt = Math.sin(time * 0.7 + zb.seed) * 0.35;
+  m.head.rotation.z = zb.tilt + zb.twitch; m.head.rotation.x = -0.1 + Math.sin(time * 1.3 + zb.seed) * 0.08;
+  const open = clamp((4.5 - dist) / 3.2, 0, 1);
+  m.jaw.position.y = -0.06 - open * 0.2; m.jaw.rotation.x = open * 0.35;
+  const pulse = 0.3 + 0.07 * Math.sin(time * 7 + zb.seed) + open * 0.12;
+  m.glowSprites.forEach((s) => { s.scale.set(pulse, pulse, 1); });
+  // red flash when hit
+  if (zb.flash > 0) { zb.flash -= dt; const f = zb.flash > 0 ? 1 : 0; m.mats.forEach((mm) => mm.emissive.setRGB(0.6 * f, 0.05 * f, 0.05 * f)); }
+}
+
+function updateLighting() {
+  const L = state === 'menu' ? 0.22 : daylight();
+  skyCol.copy(nightSky).lerp(daySky, L); scene.fog.color.copy(skyCol);
+  scene.fog.near = lerp(5, 34, L); scene.fog.far = lerp(24, 110, L);
+  hemi.intensity = lerp(0.07, 0.72, L); hemi.color.setHex(L > 0.5 ? 0xbfd8ff : 0x27304a);
+  sun.intensity = lerp(0.0, 0.95, L);
+  const a = (dayTime / CYCLE) * Math.PI * 2; sun.position.set(Math.cos(a) * 60, Math.max(0.15, Math.sin(a)) * 60 + 10, 25);
+  let fl = L < 0.45 ? (1 - L / 0.45) * 1.7 : 0;
+  if (fl > 0) { fl *= 0.92 + 0.08 * Math.sin(time * 37) * Math.sin(time * 11); if (Math.random() < 0.006) fl *= 0.25; }
+  flash.intensity = fl;
+}
+
+// ------------------------------------------------------------------ menu camera, resize, resolution scaling
+function menuCam(dt) {
+  const a = time * 0.12; const cx = W / 2 + 0.5, cz = D / 2 + 0.5;
+  camera.position.set(cx + Math.sin(a) * 14, groundY(cx, cz) + 9, cz + Math.cos(a) * 14);
+  camera.lookAt(cx, groundY(cx, cz) + 1, cz);
+}
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+window.addEventListener('resize', onResize);
+window.addEventListener('orientationchange', () => setTimeout(onResize, 250));
+function setQuality(q) {
+  quality = q; targetPR = q === 'ultra' ? Math.min(window.devicePixelRatio || 1, 3) : Math.min(window.devicePixelRatio || 1, 1.5);
+  curPR = targetPR; renderer.setPixelRatio(curPR); onResize();
+  $('qUltra').classList.toggle('on', q === 'ultra'); $('qBal').classList.toggle('on', q !== 'ultra');
+}
+$('qUltra').addEventListener('click', () => setQuality('ultra'));
+$('qBal').addEventListener('click', () => setQuality('balanced'));
+// If the device cannot hold ~40 fps at native resolution, step the pixel ratio down a notch; step back up when it has headroom.
+let frameAcc = 0, frameN = 0, adjustCd = 3;
+function adaptResolution(dt) {
+  frameAcc += dt; frameN++; adjustCd -= dt;
+  if (frameN < 45 || adjustCd > 0) return;
+  const avg = frameAcc / frameN; frameAcc = 0; frameN = 0; adjustCd = 2.5;
+  if (avg > 1 / 38 && curPR > 1) { curPR = Math.max(1, curPR - 0.25); renderer.setPixelRatio(curPR); onResize(); }
+  else if (avg < 1 / 57 && curPR < targetPR) { curPR = Math.min(targetPR, curPR + 0.25); renderer.setPixelRatio(curPR); onResize(); }
+}
+
+// ------------------------------------------------------------------ main loop
+let last = performance.now();
+function loop(now) {
+  requestAnimationFrame(loop);
+  let dt = (now - last) / 1000; last = now;
+  if (dt <= 0) return; if (dt > 0.05) dt = 0.05;
+  time += dt;
+  try {
+    if (state === 'menu') menuCam(dt);
+    else if (state === 'play') update(dt);
+    else { camera.getWorldDirection(dirVec); for (let i = zombies.length - 1; i >= 0; i--) { const zb = zombies[i]; updateZombie(zb, dt, true); if ((zb.state === 'dead' && zb.t > 2.2) || (zb.state === 'sink' && zb.t > 2.6)) removeZombie(zb); } }
+    updateLighting();
+    renderer.render(scene, camera);
+    if (state === 'play') adaptResolution(dt);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+$('play').addEventListener('click', startGame);
+$('again').addEventListener('click', startGame);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { last = performance.now(); sfx.resume(); } });
+
+function boot() {
+  generateWorld(20261109);
+  rebuildAll();
+  updateHearts();
+  requestAnimationFrame(loop);
+}
+if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(boot); else boot();
+})();
+</script>
+</body>
+</html>
